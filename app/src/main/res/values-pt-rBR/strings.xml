@@ -451,8 +451,6 @@
     <string name="auto_enable_hotspot_description">Ativa automaticamente um ponto de acesso Wi-Fi neste dispositivo. (Não funcionará em todos os dispositivos)</string>
     <string name="hotspot_warning_title">Recurso experimental</string>
     <string name="hotspot_warning_message">Este recurso usa reflexão e pode não funcionar em todos os dispositivos. Pode ser necessário conceder manualmente a permissão \"Modificar configurações do sistema\".</string>
-    <string name="hotspot_permission_title">Permissão necessária</string>
-    <string name="hotspot_permission_message">O recurso de ponto de acesso requer a permissão \"Modificar configurações do sistema\". Por favor, ative-a na próxima tela.</string>
 
     <string name="not_supported_nativeaa">O modo Sem Fio Nativo pode não ser compatível</string>
     <string name="not_supported_nativeaa_desc">Seu dispositivo pode não ser compatível com os recursos de Bluetooth ou Wi-Fi necessários para o modo Sem Fio Nativo. Você pode tentar de qualquer maneira, mas se falhar, use o modo \"Wireless Helper\" ou \"Auto (Headunit Server)\".</string>

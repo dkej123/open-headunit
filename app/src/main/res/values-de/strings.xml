@@ -472,8 +472,6 @@
     <string name="auto_enable_hotspot_description">Startet automatisch einen WLAN-Hotspot auf diesem Gerät. (Funktioniert nicht auf allen Geräten)</string>
     <string name="hotspot_warning_title">Experimentelle Funktion</string>
     <string name="hotspot_warning_message">Diese Funktion nutzt Reflection und funktioniert möglicherweise nicht auf allen Geräten. Eventuell muss die Berechtigung \"Systemeinstellungen ändern\" manuell erteilt werden.</string>
-    <string name="hotspot_permission_title">Berechtigung erforderlich</string>
-    <string name="hotspot_permission_message">Die Hotspot-Funktion benötigt die Berechtigung \"Systemeinstellungen ändern\". Bitte aktivieren Sie diese im nächsten Bildschirm.</string>
 
     <string name="supported_nativeaa">Verbesserte kabellose Unterstützung</string>
     <string name="supported_nativeaa_desc">Gute Nachrichten! Ihr Gerät unterstützt den Modus „Natives WLAN“, der ein reibungsloseres Android Auto-Erlebnis bietet. \n\nUm dies zu aktivieren, müssen wir Ihren Bluetooth-Cache aktualisieren. Bitte: \n1. Entfernen Sie die vorhandene Kopplung auf Ihrem Telefon \n2. Klicken Sie auf OK, um Bluetooth neu zu starten \n3. Koppeln Sie Ihr Telefon erneut \n\nMöchten Sie jetzt in den nativen AA-Modus wechseln?</string>

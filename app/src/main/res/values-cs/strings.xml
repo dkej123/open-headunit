@@ -453,8 +453,6 @@
     <string name="auto_enable_hotspot_description">Automaticky zapne Wi-Fi hotspot na tomto zařízení. (Nebude fungovat na všech zařízeních)</string>
     <string name="hotspot_warning_title">Experimentální funkce</string>
     <string name="hotspot_warning_message">Tato funkce používá reflexi a nemusí fungovat na všech zařízeních. Může být nutné ručně udělit oprávnění \"Změna systémových nastavení\".</string>
-    <string name="hotspot_permission_title">Vyžadováno oprávnění</string>
-    <string name="hotspot_permission_message">Funkce hotspotu vyžaduje oprávnění \"Změna systémových nastavení\". Povolte jej prosím na další obrazovce.</string>
     <string name="not_supported_nativeaa">Nativní bezdrátové připojení se zdá být nepodporováno</string>
     <string name="not_supported_nativeaa_desc">Vaše zařízení nemusí podporovat požadované funkce Bluetooth nebo Wi-Fi pro nativní bezdrátové připojení. Můžete to přesto zkusit, ale pokud to selže, použijte prosím místo toho režim „Wireless Helper“ nebo „Auto (Headunit Server)“.</string>
     <string name="wait_for_wifi">Počkat na WiFi před WiFi Direct</string>

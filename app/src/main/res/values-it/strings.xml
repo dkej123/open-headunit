@@ -459,8 +459,6 @@
     <string name="auto_enable_hotspot_description">Avvia automaticamente un hotspot Wi-Fi su questo dispositivo. (Non funzionerà su tutti i dispositivi)</string>
     <string name="hotspot_warning_title">Funzionalità Sperimentale</string>
     <string name="hotspot_warning_message">Questa funzione utilizza la riflessione e potrebbe non funzionare su tutti i dispositivi. Potrebbe anche richiedere la concessione manuale del permesso \"Modifica impostazioni di sistema\".</string>
-    <string name="hotspot_permission_title">Permesso richiesto</string>
-    <string name="hotspot_permission_message">La funzione hotspot richiede il permesso \"Modifica impostazioni di sistema\". Abilitalo nella schermata successiva.</string>
 
     <string name="supported_nativeaa">Supporto Wireless avanzato</string>
     <string name="supported_nativeaa_desc">Ottime notizie! Il tuo dispositivo supporta la modalità \"Native Wireless\", che offre un\'esperienza Android Auto più fluida. \n\nPer abilitarla, dobbiamo aggiornare la cache Bluetooth. Per favore: \n1. Rimuovi l\'associazione esistente sul telefono \n2. Clicca OK per riavviare il Bluetooth \n3. Associa nuovamente il telefono \n\nVuoi passare alla modalità Native AA ora?</string>

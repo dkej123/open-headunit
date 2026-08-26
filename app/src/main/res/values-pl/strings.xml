@@ -448,11 +448,9 @@
     <string name="vehicle_year_error_max">Rok nie może być późniejszy niż %1$d</string>
     <string name="vehicle_info_restart_note">Te dane są wysyłane do Android Auto przy każdym połączeniu.</string>
     <string name="auto_enable_hotspot">Automatycznie włącz hotspot</string>
-    <string name="auto_enable_hotspot_description">Automatycznie włącza hotspot Wi-Fi na tym urządzeniu. (Nie będzie działać na wszystkich urządzeniach)</string>
-    <string name="hotspot_warning_title">Funkcja eksperymentalna</string>
-    <string name="hotspot_warning_message">Ta funkcja korzysta z refleksji i może nie działać na wszystkich urządzeniach. Może być konieczne ręczne przyznanie uprawnienia \"Modyfikacja ustawień systemowych\".</string>
-    <string name="hotspot_permission_title">Wymagane uprawnienie</string>
-    <string name="hotspot_permission_message">Funkcja hotspot wymaga uprawnienia \"Modyfikacja ustawień systemowych\". Proszę włączyć je na następnym ekranie.</string>
+    <string name="auto_enable_hotspot_description">Automatycznie włącza hotspot Wi-Fi na tym urządzeniu.</string>
+    <string name="hotspot_warning_title">Prywatny hotspot</string>
+    <string name="hotspot_warning_message">Aplikacja uruchamia własny, prywatny hotspot Wi-Fi (nie systemowy, współdzielony) tylko po to, żeby przekazać telefonowi połączenie przez Bluetooth. Sama go wyłącza po zakończeniu sesji albo gdy inny tryb potrzebuje radia.</string>
 
     <string name="not_supported_nativeaa">Natywna łączność bezprzewodowa wydaje się nieobsługiwana</string>
     <string name="not_supported_nativeaa_desc">Twoje urządzenie może nie obsługiwać wymaganych funkcji Bluetooth lub Wi-Fi dla natywnej łączności bezprzewodowej. Możesz spróbować mimo to, ale jeśli się nie uda, użyj trybu „Wireless Helper” lub „Auto (Headunit Server)”.</string>

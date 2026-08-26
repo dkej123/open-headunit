@@ -450,8 +450,6 @@
     <string name="auto_enable_hotspot_description">Bu cihazda otomatik olarak bir Wi-Fi erişim noktası başlatır. (Her cihazda çalışmayabilir)</string>
     <string name="hotspot_warning_title">Deneysel Özellik</string>
     <string name="hotspot_warning_message">Bu özellik yansıma (reflection) kullanır ve tüm cihazlarda çalışmayabilir. Ayrıca \"Sistem ayarlarını değiştir\" izninin manuel olarak verilmesini gerektirebilir.</string>
-    <string name="hotspot_permission_title">İzin Gerekli</string>
-    <string name="hotspot_permission_message">Erişim noktası özelliği \"Sistem ayarlarını değiştir\" iznini gerektirir. Lütfen bir sonraki ekranda bu izni etkinleştirin.</string>
 
     <string name="supported_nativeaa">Gelişmiş Kablosuz Desteği</string>
     <string name="supported_nativeaa_desc">Harika haber! Cihazınız, daha sorunsuz bir Android Auto deneyimi sağlayan \"Native Wireless\" (Yerel Kablosuz) modunu destekliyor. \n\nBunu etkinleştirmek için Bluetooth önbelleğinizi yenilememiz gerekiyor. Lütfen: \n1. Telefonunuzdaki mevcut eşleşmeyi kaldırın \n2. Bluetooth\'u yeniden başlatmak için Tamam\'a tıklayın \n3. Telefonunuzu tekrar eşleştirin \n\nŞimdi Native AA moduna geçmek ister misiniz?</string>

@@ -491,8 +491,6 @@
     <string name="auto_enable_hotspot_description">ამ მოწყობილობაზე Wi-Fi ჰოტსპოტის ავტომატური გაშვება. (არ იმუშავებს ყველა მოწყობილობაზე)</string>
     <string name="hotspot_warning_title">ექსპერიმენტული ფუნქცია</string>
     <string name="hotspot_warning_message">ეს ფუნქცია იყენებს რეფლექსიას და შეიძლება არ იმუშაოს ყველა მოწყობილობაზე. მან ასევე შეიძლება მოითხოვოს \"სისტემური პარამეტრების შეცვლის\" (Modify system settings) ნებართვის მექანიკურად გაცემა.</string>
-    <string name="hotspot_permission_title">საჭიროა ნებართვა</string>
-    <string name="hotspot_permission_message">ჰოტსპოტის ფუნქციისთვის საჭიროა \"სისტემური პარამეტრების შეცვლის\" ნებართვა. გთხოვთ, ჩართოთ იგი მომდევნო ეკრანზე.</string>
 
     <string name="supported_nativeaa">გაუმჯობესებული უსადენო მხარდაჭერა</string>
     <string name="supported_nativeaa_desc">შესანიშნავი სიახლე! თქვენს მოწყობილობას აქვს \"Native Wireless\" რეჟიმის მხარდაჭერა, რაც უზრუნველყოფს Android Auto-ს უფრო სტაბილურ მუშაობას. \n\nამის გასააქტიურებლად საჭიროა Bluetooth ქეშის განახლება. გთხოვთ: \n1. წაშალეთ არსებული კავშირი (pairing) ტელეფონში \n2. დააჭირეთ OK-ს Bluetooth-ის გადასატვირთად \n3. ხელახლა დააწყვილეთ ტელეფონი \n\nგსურთ გადახვიდეთ Native AA რეჟიმზე ახლავე?</string>

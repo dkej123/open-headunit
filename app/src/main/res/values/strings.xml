@@ -752,11 +752,9 @@
     <string name="vehicle_info_restart_note">This data is sent to Android Auto every time you connect.</string>
 
     <string name="auto_enable_hotspot">Auto-Enable Hotspot</string>
-    <string name="auto_enable_hotspot_description">Automatically starts a Wi-Fi hotspot on this device. (Won\'t work on every device)</string>
-    <string name="hotspot_warning_title">Experimental Feature</string>
-    <string name="hotspot_warning_message">This feature uses reflection and might not work on all devices. It may also require the "Modify system settings" permission to be granted manually.</string>
-    <string name="hotspot_permission_title">Permission Required</string>
-    <string name="hotspot_permission_message">The hotspot feature requires the \"Modify system settings\" permission. Please enable it in the next screen.</string>
+    <string name="auto_enable_hotspot_description">Automatically starts a Wi-Fi hotspot on this device.</string>
+    <string name="hotspot_warning_title">Private Hotspot</string>
+    <string name="hotspot_warning_message">This app starts its own private Wi-Fi hotspot (not the shared system one) just to hand your phone the connection over Bluetooth. It switches the hotspot off again on its own once the session ends, or when another mode needs the radio.</string>
 
     <string name="supported_nativeaa">Enhanced Wireless Support</string>
     <string name="supported_nativeaa_desc">Great news! Your device supports \"Native Wireless\" mode, which provides a more seamless Android Auto experience. \n\nTo enable this, we need to refresh your Bluetooth cache. Please: \n1. Remove the existing pairing on your phone \n2. Click OK to restart Bluetooth \n3. Re-pair your phone \n\nWould you like to switch to Native AA mode now?</string>
@@ -838,6 +836,8 @@
     <string name="select_bt_adapter">Select Bluetooth Adapter</string>
     <string name="manual_secondary_bt_service_title">Manual Secondary Radio</string>
     <string name="manual_secondary_bt_service_message">Advanced: force an extra Bluetooth radio, for dual-radio units whose second radio isn\'t found automatically. Find it via \"adb shell service list\" (look for a Bluetooth-sounding entry besides bluetooth_manager) or an engineering menu, then paste either the name before the colon or the interface shown in brackets - both work. Not guaranteed to help on every unit: some head units run a customized Bluetooth stack that this can\'t bridge to no matter what you enter here. Leave blank to disable.</string>
+    <string name="bluetooth_address_message">This head unit\'s own Bluetooth MAC address, sent to the phone during the Android Auto handshake so it can pair Classic Bluetooth (A2DP/HFP) with this device automatically - without it, the phone never offers this unit as a Bluetooth audio/call device and you have to pair by hand in Android\'s own Bluetooth settings. Pre-filled with the address this app can read off the selected adapter above; edit it if that is wrong, or leave blank to skip advertising it.</string>
+    <string name="invalid_mac_address">Not a MAC address (six hex pairs separated by \':\' or \'-\', e.g. AA:BB:CC:DD:EE:FF). Left unchanged.</string>
     <string name="native_ap_transport">Network transport</string>
     <string name="native_ap_transport_wifi_direct">WiFi Direct</string>
     <string name="native_ap_transport_hotspot">Hotspot</string>
@@ -855,9 +855,9 @@
     <string name="hotspot_interface_override">Hotspot network interface</string>
     <string name="hotspot_interface_override_message">Leave blank to work it out automatically. Set this if the log says more than one interface could be the access point, or picks the wrong one. The name is the one the log reports after &quot;Providing credentials from&quot;, or the entry holding your hotspot\'s address in &quot;ip -brief addr&quot; from a shell. Common names: ap0, wlan0, wlan1, wlan2, softap0, ra0.</string>
     <string name="hotspot_ssid_override">Hotspot name (manual)</string>
-    <string name="hotspot_ssid_override_message">Leave blank to read the name from this device\'s hotspot settings automatically. Some devices do not let apps read it - if the log says the name could not be read, type it here exactly as it appears in your hotspot settings.</string>
+    <string name="hotspot_ssid_override_message">Leave blank to read the name from this device\'s hotspot settings automatically. Some devices do not let apps read it - if the log says the name could not be read, type it here exactly as it appears in your hotspot settings. Required if "Auto-Enable Hotspot" is on: the app starts its own hotspot with this exact name.</string>
     <string name="hotspot_password_override">Hotspot password (manual)</string>
-    <string name="hotspot_password_override_message">Leave blank to read the password automatically. Needed on devices that do not let apps read the hotspot configuration. The phone will be given this password to join.</string>
+    <string name="hotspot_password_override_message">Leave blank to read the password automatically. Needed on devices that do not let apps read the hotspot configuration. The phone will be given this password to join. Required if "Auto-Enable Hotspot" is on: the app starts its own hotspot with this exact password.</string>
 
     <!-- Native AA credential pre-flight: what this unit can and cannot tell the phone about its own network -->
 

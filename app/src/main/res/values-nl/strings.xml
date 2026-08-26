@@ -450,8 +450,6 @@
     <string name="auto_enable_hotspot_description">Start automatisch een Wi-Fi-hotspot op dit apparaat. (Werkt niet op alle apparaten)</string>
     <string name="hotspot_warning_title">Experimentele functie</string>
     <string name="hotspot_warning_message">Deze functie gebruikt reflectie en werkt mogelijk niet op alle apparaten. Mogelijk moet u handmatig de toestemming \"Systeeminstellingen wijzigen\" verlenen.</string>
-    <string name="hotspot_permission_title">Toestemming vereist</string>
-    <string name="hotspot_permission_message">De hotspotfunctie vereist de toestemming \"Systeeminstellingen wijzigen\". Schakel deze in op het volgende scherm.</string>
 
     <string name="not_supported_nativeaa">Native Draadloos lijkt niet ondersteund</string>
     <string name="not_supported_nativeaa_desc">Je apparaat ondersteunt mogelijk de vereiste Bluetooth- of Wi-Fi-functies voor Native Draadloos niet. Je kunt het toch proberen, maar als het mislukt, gebruik dan de \"Wireless Helper\"- of \"Auto (Headunit Server)\"-modus.</string>

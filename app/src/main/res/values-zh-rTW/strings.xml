@@ -450,8 +450,6 @@
     <string name="auto_enable_hotspot_description">自動在此裝置上啟用 Wi-Fi 熱點。（不保證在所有裝置上都能運作）</string>
     <string name="hotspot_warning_title">實驗性功能</string>
     <string name="hotspot_warning_message">此功能使用反射機制，可能無法在所有裝置上正常運作。可能需要手動授予「修改系統設定」權限。</string>
-    <string name="hotspot_permission_title">需要權限</string>
-    <string name="hotspot_permission_message">熱點功能需要「修改系統設定」權限。請在下一個畫面中啟用。</string>
 
     <string name="not_supported_nativeaa">似乎不支援原生無線連接</string>
     <string name="not_supported_nativeaa_desc">您的裝置可能不支援原生無線所需的藍牙或 Wi-Fi 功能。您可以嘗試連線，但如果失敗，請改用「Wireless Helper」或「Auto (主機伺服器)」模式。</string>

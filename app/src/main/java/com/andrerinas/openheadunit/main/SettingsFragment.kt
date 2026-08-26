@@ -8,7 +8,6 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings as SystemSettings
 import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
@@ -38,7 +37,6 @@ import com.andrerinas.openheadunit.decoder.DeviceMemoryProfile
 import com.andrerinas.openheadunit.main.settings.SettingItem
 import com.andrerinas.openheadunit.main.settings.SettingsAdapter
 import com.andrerinas.openheadunit.utils.AppLog
-import com.andrerinas.openheadunit.utils.AppPermissions
 import com.andrerinas.openheadunit.utils.AppThemeManager
 import com.andrerinas.openheadunit.utils.Settings
 import com.andrerinas.openheadunit.utils.LocaleHelper
@@ -1045,6 +1043,44 @@ class SettingsFragment : Fragment() {
                             updateSettingsList()
                         }
                         .show()
+                }
+            ))
+
+            // The head unit's own BT MAC, advertised to the phone in ServiceDiscoveryResponse's
+            // BluetoothService (Channel.ID_BTH) so it can pair Classic Bluetooth A2DP/HFP with this
+            // device on its own. That service is skipped entirely when this is blank — see
+            // Settings.bluetoothAddress — so a phone that never gets offered this unit as a
+            // Bluetooth device is very often simply this field being empty, not a real pairing
+            // failure. Pre-filled from BluetoothHelper.getBluetoothMacAddress() (the same resolver
+            // already shown in the adapter picker above), since adapter.address is masked to
+            // "02:00:00:00:00:00" for this app on API 23+ and typing a MAC by hand is not something
+            // most users can do without an engineering menu.
+            val currentBtAddress = pendingBluetoothAddress.orEmpty()
+            items.add(SettingItem.SettingEntry(
+                stableId = "bluetoothAddress",
+                nameResId = R.string.bluetooth_address_s,
+                value = currentBtAddress.ifEmpty { getString(R.string.auto) },
+                onClick = { _ ->
+                    val suggested = currentBtAddress.ifEmpty {
+                        BluetoothHelper.getBluetoothMacAddress(requireContext(), BluetoothHelper.getBluetoothAdapter(requireContext())).orEmpty()
+                    }
+                    DialogUtils.showTextInputDialogWithMessage(
+                        requireContext(),
+                        R.string.bluetooth_address_s,
+                        R.string.bluetooth_address_message,
+                        suggested,
+                        { newVal ->
+                            when {
+                                newVal.isEmpty() -> pendingBluetoothAddress = ""
+                                SoftApBssidPolicy.isUsable(newVal) -> {
+                                    pendingBluetoothAddress = newVal.trim().replace('-', ':').uppercase()
+                                }
+                                else -> Toast.makeText(requireContext(), R.string.invalid_mac_address, Toast.LENGTH_LONG).show()
+                            }
+                            checkChanges()
+                            updateSettingsList()
+                        }
+                    )
                 }
             ))
 
@@ -3065,38 +3101,15 @@ class SettingsFragment : Fragment() {
             .show()
     }
 
-    private fun showPermissionDialog() {
-        MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
-            .setTitle(R.string.hotspot_permission_title)
-            .setMessage(R.string.hotspot_permission_message)
-            .setPositiveButton(R.string.open_settings) { dialog, _ ->
-                try {
-                    val intent = Intent(SystemSettings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                        data = Uri.parse("package:${requireContext().packageName}")
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    try {
-                        startActivity(Intent(SystemSettings.ACTION_MANAGE_WRITE_SETTINGS))
-                    } catch (e2: Exception) {
-                        try {
-                            startActivity(Intent(SystemSettings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.parse("package:${requireContext().packageName}")
-                            })
-                        } catch (_: Exception) {}
-                    }
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                pendingAutoEnableHotspot = false
-                checkChanges()
-                updateSettingsList()
-            }
-            .show()
-    }
-
-    private fun showExperimentalWarning() {
+    /**
+     * One-time confirmation before the "Auto-Enable Hotspot" toggle takes effect.
+     *
+     * No permission gate before this any more: [HotspotManager] starts the hotspot itself via
+     * `WifiManager.startLocalOnlyHotspot()`, which needs only NEARBY_WIFI_DEVICES (already
+     * requested during onboarding) — not the WRITE_SETTINGS "Modify system settings" access the
+     * old tethering-based implementation needed and never actually had.
+     */
+    private fun showHotspotEnableConfirmation() {
         MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
             .setTitle(R.string.hotspot_warning_title)
             .setMessage(R.string.hotspot_warning_message)
@@ -3422,37 +3435,6 @@ class SettingsFragment : Fragment() {
         settings.reopenOnReconnection = false
     }
 
-    private fun showHotspotPermissionDialog() {
-        MaterialAlertDialogBuilder(requireContext(), R.style.DarkAlertDialog)
-            .setTitle(R.string.hotspot_permission_title)
-            .setMessage(R.string.hotspot_permission_message)
-            .setPositiveButton(R.string.open_settings) { dialog, _ ->
-                try {
-                    val intent = Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
-                        data = Uri.parse("package:${requireContext().packageName}")
-                    }
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    try {
-                        startActivity(Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS))
-                    } catch (e2: Exception) {
-                        try {
-                            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                data = Uri.parse("package:${requireContext().packageName}")
-                            })
-                        } catch (_: Exception) {}
-                    }
-                }
-                dialog.dismiss()
-            }
-            .setNegativeButton(R.string.cancel) { _, _ ->
-                pendingAutoEnableHotspot = false
-                checkChanges()
-                updateSettingsList()
-            }
-            .show()
-    }
-
     /** The transport the Native AA block is currently showing settings for. */
     private fun pendingNativeTransport(): NativeTransport =
         NativeTransport.fromSetting(pendingNativeApTransport ?: 0)
@@ -3535,11 +3517,7 @@ class SettingsFragment : Fragment() {
             isChecked = pendingAutoEnableHotspot ?: false,
             onCheckedChanged = { isChecked ->
                 if (isChecked) {
-                    if (!AppPermissions.isWriteSettingsGranted(requireContext())) {
-                        showPermissionDialog()
-                    } else {
-                        showExperimentalWarning()
-                    }
+                    showHotspotEnableConfirmation()
                 } else {
                     pendingAutoEnableHotspot = false
                     checkChanges()
@@ -3881,7 +3859,6 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    /** The same deep-link shape as [showPermissionDialog], including its refusal to crash. */
     private fun openLocationSettings() {
         try {
             startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))

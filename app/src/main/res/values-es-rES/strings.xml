@@ -453,8 +453,6 @@
     <string name="auto_enable_hotspot_description">Inicia automáticamente un punto de acceso Wi-Fi en este dispositivo. (No funcionará en todos los dispositivos)</string>
     <string name="hotspot_warning_title">Función experimental</string>
     <string name="hotspot_warning_message">Esta función utiliza reflexión y es posible que no funcione en todos los dispositivos. También puede requerir que se otorgue manualmente el permiso \"Modificar ajustes del sistema\".</string>
-    <string name="hotspot_permission_title">Permiso requerido</string>
-    <string name="hotspot_permission_message">La función de punto de acceso requiere el permiso \"Modificar ajustes del sistema\". Por favor, actívelo en la siguiente pantalla.</string>
     <string name="not_supported_nativeaa">El modo inalámbrico nativo parece no ser compatible</string>
     <string name="not_supported_nativeaa_desc">Es posible que su dispositivo no sea compatible con las funciones de Bluetooth o Wi-Fi necesarias para el modo inalámbrico nativo. Puede intentarlo de todos modos, pero si falla, use el modo \"Wireless Helper\" o \"Automático (Headunit Server)\" en su lugar.</string>
     <string name="wait_for_wifi">Esperar WiFi antes de WiFi Direct</string>

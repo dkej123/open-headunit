@@ -451,8 +451,6 @@
     <string name="auto_enable_hotspot_description">Автоматично вмикає точку доступу Wi-Fi на цьому пристрої. (Працюватиме не на всіх пристроях)</string>
     <string name="hotspot_warning_title">Експериментальна функція</string>
     <string name="hotspot_warning_message">Ця функція використовує рефлексію і може не працювати на всіх пристроях. Можливо, потрібно вручну надати дозвіл \"Зміна системних налаштувань\".</string>
-    <string name="hotspot_permission_title">Потрібен дозвіл</string>
-    <string name="hotspot_permission_message">Функція точки доступу потребує дозволу \"Зміна системних налаштувань\". Будь ласка, увімкніть його на наступному екрані.</string>
 
     <string name="not_supported_nativeaa">Нативний бездротовий режим, схоже, не підтримується</string>
     <string name="not_supported_nativeaa_desc">Ваш пристрій може не підтримувати необхідні функції Bluetooth або Wi-Fi для нативного бездротового режиму. Ви можете спробувати в будь-якому випадку, але якщо не вдасться, використовуйте режим «Wireless Helper» або «Auto (Headunit Server)».</string>

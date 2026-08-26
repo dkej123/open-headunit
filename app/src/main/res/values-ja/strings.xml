@@ -460,8 +460,6 @@
     <string name="auto_enable_hotspot_description">このデバイスでWi-Fiホットスポットを自動的に起動します。（すべてのデバイスで動作するとは限りません）</string>
     <string name="hotspot_warning_title">実験的機能</string>
     <string name="hotspot_warning_message">この機能は反射を利用するため、すべてのデバイスで動作するとは限りません。また、「システム設定の変更」権限を手動で付与する必要がある場合もあります。</string>
-    <string name="hotspot_permission_title">許可が必要です</string>
-    <string name="hotspot_permission_message">ホットスポット機能を使用するには、「システム設定の変更」権限が必要です。次の画面で有効にしてください。</string>
 
     <string name="wait_for_wifi">Wi-Fi Directを使用する前に、Wi-Fiが有効になるまでお待ちください。</string>
     <string name="wait_for_wifi_description">起動時に、Wi-Fi接続が完了するまで待ってからWi-Fi Directを開始します。ヘッドユニットの電源投入後、Wi-Fi接続に数秒かかる場合は、この設定を有効にしてください。</string>

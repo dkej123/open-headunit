@@ -1,195 +1,280 @@
 package com.andrerinas.openheadunit.utils
 
 import android.content.Context
-import android.net.ConnectivityManager
+import android.net.MacAddress
+import android.net.wifi.SoftApConfiguration
 import android.net.wifi.WifiManager
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import com.android.dx.DexMaker
-import com.android.dx.TypeId
-import java.lang.reflect.Method
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import com.andrerinas.openheadunit.utils.SoftApConfigCompat
-import com.andrerinas.openheadunit.aap.ApBand
-import com.andrerinas.openheadunit.aap.ApInterfaceCandidate
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import com.andrerinas.openheadunit.aap.HotspotBandPreference
 import com.andrerinas.openheadunit.aap.SoftApBandPolicy
-import com.andrerinas.openheadunit.aap.SoftApNetworkPolicy
-import com.andrerinas.openheadunit.aap.SoftApState
+import com.andrerinas.openheadunit.aap.SoftApBssidPolicy
 
 /**
- * Manages WiFi Hotspot (tethering) using reflection + dexmaker.
+ * Starts and stops this device's own private WiFi access point via
+ * `WifiManager.startLocalOnlyHotspot(SoftApConfiguration, Executor, LocalOnlyHotspotCallback)`,
+ * reflectively — exactly the mechanism `hotspot-helper` used to own, and the only one confirmed
+ * to work on this hardware without root or WRITE_SETTINGS/TETHER_PRIVILEGED. The previous
+ * implementation went through system tethering (TetheringManager/ConnectivityManager/
+ * setWifiApEnabled), which is privileged and never actually worked here — including on
+ * [restart], which is why a dropped session used to leave the phone stuck on a dead network for
+ * 15-27 seconds instead of reconnecting immediately.
  */
 object HotspotManager {
-    private const val TAG = "OPENHU_WIFI"
-    private const val CALLBACK_CLASS = "android.net.ConnectivityManager\$OnStartTetheringCallback"
+    /** How long to wait for the async start callback before giving up. */
+    private const val START_TIMEOUT_MS = 6_000L
 
-    /** How long to give the framework to actually bring an access point up. */
-    private const val AP_STATE_TIMEOUT_MS = 6_000L
+    /**
+     * How long to let a just-closed access point actually finish tearing down before starting a
+     * new one. `close()` only posts the teardown; measured on this hardware, `SoftApManager`
+     * confirms "Soft AP is stopped" 90-180ms later, and asking for a new access point before that
+     * — even a few ms before — collides with the old one mid-teardown (`onFailed`, reason 2), so
+     * this needs headroom rather than a tight bound. Not driven off a confirmation signal: our own
+     * callback's `onStopped()` is measured to never fire for our own `close()` on this hardware
+     * (only for a system-initiated stop), and polling `getWifiApState()` proved just as
+     * unreliable — it returned "confirmed" within 1ms of `close()`, before the framework had done
+     * anything, on a device where the same call works fine everywhere else in this codebase. A
+     * fixed wait with real headroom over the measured worst case is what's actually reliable here.
+     */
+    private const val RESTART_SETTLE_MS = 300L
 
-    /** How long to leave the access point down so a joined client notices it has gone. */
-    private const val RESTART_SETTLE_MS = 2_000L
+    /** Hidden `SoftApConfiguration` constant, not present in the public stub jar. */
+    private const val RANDOMIZATION_NONE = 0
 
-    /** TetheringManager.TETHERING_WIFI. */
-    private const val TETHERING_WIFI = 0
+    /** An access point we started, plus the latch that fires when the framework actually tears
+     *  it down — whether from our own [close] or the system stopping it on its own. */
+    private class ActiveHotspot(
+        val reservation: WifiManager.LocalOnlyHotspotReservation,
+        val stoppedLatch: CountDownLatch = CountDownLatch(1)
+    )
 
-    private var cachedCallbackClass: Class<*>? = null
+    @Volatile private var active: ActiveHotspot? = null
 
     /**
      * Whether a start is already running. Bringing an access point up takes up to
-     * [AP_STATE_TIMEOUT_MS] per band, and more than one caller asks for it: the credentials
-     * provider auto-enables, and every "still waiting for credentials" refresh can ask again. Two
-     * overlapping sweeps race each other's bands and end with a log claiming the access point came
-     * up twice, on both of them.
+     * [START_TIMEOUT_MS], and more than one caller asks for it: the credentials provider
+     * auto-enables, and AapService asks again on its own paths.
      */
     @Volatile private var startInFlight = false
 
     /**
-     * Takes the access point down and brings it straight back up.
+     * Identifies the most recent start attempt. `startInFlight` keeps two [setHotspotEnabled]
+     * (true) calls from overlapping, but a [WifiManager.LocalOnlyHotspotCallback] belonging to
+     * an *older* attempt can still fire — usually `onStopped()` — long after that attempt has
+     * finished and a newer one has started, since `restart()` moves on to a new start well
+     * before the old reservation's real teardown callback is guaranteed to have arrived (see
+     * [RESTART_SETTLE_MS]). Each callback closure captures the generation current when it was
+     * registered and checks it before touching [active], so a late callback from a superseded
+     * attempt cannot null out — or otherwise clobber — a newer, still-live reservation. Mirrors
+     * `HotspotServiceController.acceptsCallback()` in the sibling `hotspot-helper` app, which
+     * solves the identical problem the same way.
      *
-     * Removing the network is the only way this app can put a phone off it — nothing in the public
-     * API disconnects a client from your own access point, and the one thing that comes close,
-     * `SoftApConfiguration`'s blocked-client list, needs the same `setSoftApConfiguration()` call
-     * that head units routinely refuse outright. So the network has to go; it does not have to stay
-     * gone. Bringing it back here costs seconds nobody is waiting through, where leaving it down
-     * charges the same seconds to the next connection, with the phone waiting.
+     * Also bumped by [setHotspotEnabled]'s `enabled = false` path, even when it finds [active]
+     * already null. Without that, a disable racing a start still in flight — `active` not set
+     * yet, so the disable sees "nothing to close" and returns immediately — would let that
+     * start's `onStarted()` land afterwards and quietly turn the hotspot back on, with nothing
+     * left holding a reference that would ever close it again. Bumping the generation here means
+     * that `onStarted()`, whenever it does arrive, finds itself superseded and closes its own
+     * reservation instead of publishing it — the same path already used for a start superseded
+     * by a newer start, just triggered by a disable instead.
+     */
+    private val startGeneration = AtomicLong(0)
+
+    private val lock = Any()
+
+    /**
+     * Where the framework dispatches [WifiManager.LocalOnlyHotspotCallback]. Deliberately not
+     * `context.mainExecutor`: [setHotspotEnabled] with `enabled = false` blocks its caller on
+     * [ActiveHotspot.stoppedLatch], and `AapService.onDestroy()` calls it straight from the main
+     * thread — dispatching the callback onto that same main thread would have it wait on itself.
+     */
+    private val callbackExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "HotspotManager-callback") }
+
+    /**
+     * Takes the access point down and brings it straight back up, so any joined client is put
+     * off it.
      *
-     * Putting it back is the part that is not free, and it is asked for **once** — measured rather
-     * than assumed. Tearing an access point down and asking for it again is the sequence some
-     * drivers handle worst: hostapd begins its channel scan before the interface is back, the scan
-     * returns `ENODEV`, and it aborts instead of starting. Asking again at this layer does not beat
-     * that. Across three runs, **nine** asks spaced ~12.5 s apart failed with that same signature
-     * and not one recovered; the single bring-up that did succeed came from a start posted **127 ms**
-     * behind a failed one — 270 ms in an earlier capture — landing in a window open for a few hundred
-     * milliseconds and shut long before this layer can ask again. Where the hardware handles a
-     * stop/start cleanly one ask is all that was ever needed; where it does not, the access point
-     * stays down and the next connection's auto-enable brings it back, which is the cost this
-     * restart exists to avoid, paid only on hardware that will not cooperate — rather than that same
-     * cost plus half a minute of asking that never works.
-     *
-     * There is also a window this cannot close. Between the two calls the access point is genuinely
-     * down, and a process killed outright in that window — `am force-stop`, or the system reclaiming
-     * the app — runs none of the code below, so the hotspot stays off. Measured, and bounded rather
-     * than fixed: the next connection's `SoftApCredentialsProvider` auto-enable switches it back on,
-     * which is the same cost the restart exists to avoid paying, not a permanent break. Shrinking
-     * [RESTART_SETTLE_MS] narrows the window; nothing removes it.
+     * [setHotspotEnabled] with `enabled = false` here closes an owned
+     * [WifiManager.LocalOnlyHotspotReservation] and — this is the part that matters for a
+     * restart — gives it [RESTART_SETTLE_MS] to actually finish tearing down before returning.
+     * `close()` only posts the teardown; asking for a new access point immediately raced it here
+     * (`onFailed`, reason 2, a few ms after `close()`) and needed a second, unrelated auto-enable
+     * elsewhere in the app to recover the hotspot at all, ten seconds later. See
+     * [RESTART_SETTLE_MS] for why this is a fixed wait rather than a polled confirmation.
      */
     fun restart(context: Context): Boolean {
         AppLog.i("HotspotManager: Restarting the hotspot so any joined client is put off it.")
         setHotspotEnabled(context, false)
-        try {
-            Thread.sleep(RESTART_SETTLE_MS)
-        } catch (e: InterruptedException) {
-            // Interrupted with the access point already down, which is the one state this method
-            // must not leave behind: switching one back on is best effort, and on a unit without
-            // WRITE_SETTINGS nothing else can. Put it back before unwinding, then restore the flag
-            // so whatever cancelled us still sees it.
-            AppLog.w("HotspotManager: Interrupted while the hotspot was down; bringing it back before giving up.")
-            val restored = setHotspotEnabled(context, true)
-            Thread.currentThread().interrupt()
-            return restored
-        }
-
-        if (setHotspotEnabled(context, true)) return true
-
-        AppLog.e("HotspotManager: The hotspot was taken down to put the phone off the network and would not come back up. It is off now, and this app cannot force it: switch it on in system settings, or just connect again — the app switches it back on itself at the start of a connection.")
-        return false
+        return setHotspotEnabled(context, true)
     }
 
     fun setHotspotEnabled(context: Context, enabled: Boolean): Boolean {
-        AppLog.i("HotspotManager: Setting hotspot enabled=$enabled (API ${Build.VERSION.SDK_INT}, canWriteSettings=${AppPermissions.isWriteSettingsGranted(context)})")
+        if (!enabled) {
+            val current = synchronized(lock) {
+                // Supersede any start still in flight before reading `active`, not after — see
+                // [startGeneration]. Unconditional: whether or not one turns out to be running,
+                // bumping the generation here is what keeps a start that has not reached
+                // onStarted() yet from adopting `active` after this call has already returned.
+                startGeneration.incrementAndGet()
+                active
+            }
+            if (current == null) return true
+            current.reservation.close()
+            awaitTeardown(current.stoppedLatch)
+            synchronized(lock) { if (active === current) active = null }
+            return true
+        }
 
-        // Disabling has no band to choose and nothing to confirm afterwards, and never collides
-        // with a start: only one caller ever asks for it. The band below is unused, since
-        // SoftApConfigCompat.enableHotspot() returns before reading it when enabled is false.
-        if (!enabled) return startOnBand(context, enabled = false, band = ApBand.BAND_5GHZ).attempted
-
-        // Claimed before anything slow runs, or the WiFi-disable sleep below is long enough for a
-        // second caller to walk straight past the check.
-        synchronized(this) {
+        synchronized(lock) {
             if (startInFlight) {
                 AppLog.i("HotspotManager: A hotspot start is already running; letting it finish rather than starting a second one.")
-                return isApUp(context)
+                return active != null
             }
             startInFlight = true
         }
 
-        // On Android 8+, WiFi must be disabled before tethering can start. Ask, then say what
-        // actually happened: setWifiEnabled() is a no-op for apps targeting API 29+ and this app
-        // targets well past that, so on most devices the request is silently ignored and the
-        // framework drops the station itself when it needs the radio. Announcing the attempt as if
-        // it worked is how the radio state ends up being read as ours.
         try {
-            try {
-                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-                if (wm.isWifiEnabled) {
-                    @Suppress("DEPRECATION")
-                    wm.isWifiEnabled = false
-                    Thread.sleep(500) // Let the radio settle
-                    if (wm.isWifiEnabled) {
-                        AppLog.i("HotspotManager: Asked to disable WiFi and the platform ignored it (expected on modern Android); the framework will take the radio itself if it needs to.")
-                    } else {
-                        AppLog.i("HotspotManager: WiFi disabled before enabling hotspot.")
-                    }
-                }
-            } catch (e: Exception) {
-                AppLog.w("HotspotManager: Failed to disable WiFi: ${e.message}")
+            val ssid = Settings(context).hotspotSsid.trim()
+            val password = Settings(context).hotspotPassword.trim()
+            if (ssid.isEmpty() || password.isEmpty()) {
+                AppLog.e("HotspotManager: Cannot start the hotspot without a configured name and password (Settings > Hotspot). Refusing to fall back to the system tethering config, since that would not match what this app tells the phone to connect to.")
+                return false
             }
 
-            // Which bands to try, and in what order. Resolved once: every line below reports the
-            // list actually being iterated, so a forced band cannot be described as "every band".
             val preference = bandPreference(context)
-            val order = SoftApBandPolicy.attemptOrder(preference)
-            AppLog.i("HotspotManager: Band preference is ${SoftApBandPolicy.describePreference(preference)}; trying ${order.joinToString { SoftApBandPolicy.describe(it) }}.")
+            val band = SoftApBandPolicy.attemptOrder(preference).first()
+            AppLog.i("HotspotManager: Band preference is ${SoftApBandPolicy.describePreference(preference)}; requesting ${SoftApBandPolicy.describe(band)}.")
 
-            var attemptedAny = false
-            for ((index, band) in order.withIndex()) {
-                if (index > 0) {
-                    AppLog.w("HotspotManager: no access point on ${SoftApBandPolicy.describe(order[index - 1])}; retrying on ${SoftApBandPolicy.describe(band)}. Measured on 2.4 GHz: a 1080p/60 session connects, opens the video channel and then dies having sent no frame at all, while the same access point carries 800x480/30 indefinitely. If the projection dies shortly after connecting, this line is why, and a lower resolution and frame rate is the other way out.")
-                }
-                val outcome = startOnBand(context, enabled = true, band = band)
-                attemptedAny = attemptedAny || outcome.attempted
-                if (outcome.up) {
-                    AppLog.i(describeApUp(outcome.configured, band))
-                    return true
-                }
-                if (!outcome.configured) {
-                    // The band never reached the framework, so the next one would post the same
-                    // request against the same stored configuration and start the same access
-                    // point again. Measured on a unit that refuses setSoftApConfiguration(): three
-                    // start requests, all `channels {3=0}`, two of them tearing down an access
-                    // point the previous one had just brought up.
-                    val nextBand = order.getOrNull(index + 1)
-                    if (nextBand != null) {
-                        AppLog.w("HotspotManager: This device would not take a band request, so trying ${SoftApBandPolicy.describe(nextBand)} would start the same access point again. Leaving the band to the device.")
-                    } else {
-                        AppLog.w("HotspotManager: This device would not take a band request, so the access point is on whatever band it already had configured, which this app cannot read.")
+            val staticBssid = Settings(context).staticBSSID
+            val bssid = if (SoftApBssidPolicy.isUsable(staticBssid)) staticBssid else null
+
+            val config = try {
+                buildSoftApConfiguration(ssid, password, SoftApBandPolicy.softApConfigurationBand(band), bssid)
+            } catch (t: Throwable) {
+                AppLog.e("HotspotManager: Could not build a SoftApConfiguration via reflection.", t)
+                return false
+            }
+
+            val startLatch = CountDownLatch(1)
+            val started = AtomicBoolean(false)
+            // Belongs to the ActiveHotspot this start produces, if it produces one — created
+            // upfront so onFailed can still release anyone waiting on a *previous* ActiveHotspot's
+            // stoppedLatch to have no effect here (they're different objects; see onStarted).
+            val stoppedLatch = CountDownLatch(1)
+            // Captured now, while startInFlight still guarantees no other attempt can be running:
+            // this is the generation this callback's onStarted/onFailed/onStopped must still match
+            // by the time they fire, or a late one is stale and must not touch shared state.
+            val myGeneration = startGeneration.incrementAndGet()
+
+            val callback = object : WifiManager.LocalOnlyHotspotCallback() {
+                override fun onStarted(res: WifiManager.LocalOnlyHotspotReservation) {
+                    started.set(true)
+                    startLatch.countDown()
+                    if (myGeneration != startGeneration.get()) {
+                        AppLog.w("HotspotManager: This start was superseded before it finished (a newer start or an explicit disable arrived first); closing the now-redundant reservation instead of taking it over.")
+                        res.close()
+                        return
                     }
-                    break
+                    synchronized(lock) { active = ActiveHotspot(res, stoppedLatch) }
+                    AppLog.i("HotspotManager: Hotspot started. ssid=${describeReservation(res)}")
+                }
+
+                override fun onFailed(reason: Int) {
+                    startLatch.countDown()
+                    if (myGeneration != startGeneration.get()) return
+                    synchronized(lock) { active = null }
+                    AppLog.e("HotspotManager: Hotspot start failed, reason=$reason")
+                }
+
+                override fun onStopped() {
+                    stoppedLatch.countDown()
+                    // Measured on this hardware: onStopped() for our own close() routinely arrives
+                    // after RESTART_SETTLE_MS has already elapsed and restart() has moved on to a
+                    // new attempt. Without this check, that late call would null out `active` while
+                    // it correctly points at the newer, still-live reservation — orphaning it, since
+                    // setHotspotEnabled(false) is then a no-op forever after (active == null) and the
+                    // framework never gets a close() for it.
+                    if (myGeneration != startGeneration.get()) {
+                        AppLog.w("HotspotManager: A stale onStopped() arrived for a superseded hotspot attempt; ignoring it instead of clearing the current one.")
+                        return
+                    }
+                    synchronized(lock) { active = null }
+                    AppLog.w("HotspotManager: Hotspot was stopped (by the system or another caller).")
                 }
             }
 
-            // A request the framework accepted late still brings an access point up, after the band
-            // it belonged to has been written off. Look once more before reporting failure: saying
-            // no here is what makes a caller start a second, overlapping sweep.
-            if (attemptedAny && awaitApUp(context)) {
-                AppLog.i("HotspotManager: An access point came up after its band's window had expired; taking it. Which band it chose is not something this app can read.")
-                return true
+            try {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                val startMethod = WifiManager::class.java.getMethod(
+                    "startLocalOnlyHotspot",
+                    SoftApConfiguration::class.java,
+                    Executor::class.java,
+                    WifiManager.LocalOnlyHotspotCallback::class.java
+                )
+                startMethod.invoke(wifiManager, config, callbackExecutor, callback)
+            } catch (t: Throwable) {
+                AppLog.e("HotspotManager: startLocalOnlyHotspot() is unavailable via reflection.", t)
+                return false
             }
 
-            if (attemptedAny) {
-                AppLog.w("HotspotManager: Every start path was tried on ${order.joinToString { SoftApBandPolicy.describe(it) }} and no access point came up within ${AP_STATE_TIMEOUT_MS / 1000}s each. On a non-privileged install this usually cannot be done from an app — switch the hotspot on in system settings instead.")
-            } else {
-                AppLog.w("HotspotManager: All hotspot attempts failed.")
+            if (!startLatch.await(START_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                AppLog.w("HotspotManager: Timed out after ${START_TIMEOUT_MS / 1000}s waiting for the hotspot to start.")
+                return false
             }
-            warnIfRadioLeftDown(context)
-            return false
+            return started.get()
         } finally {
             startInFlight = false
         }
+    }
+
+    /**
+     * Gives a just-closed access point [RESTART_SETTLE_MS] to actually finish tearing down —
+     * unless [stoppedLatch] fires first (belt-and-suspenders for a device where `onStopped()`
+     * does fire for our own `close()`, letting the wait end early there instead of always paying
+     * the full settle time).
+     */
+    private fun awaitTeardown(stoppedLatch: CountDownLatch) {
+        try {
+            stoppedLatch.await(RESTART_SETTLE_MS, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /** Builds a `SoftApConfiguration` via reflection, identically to `hotspot-helper`. */
+    private fun buildSoftApConfiguration(ssid: String, password: String, band: Int, bssid: String?): SoftApConfiguration {
+        val builderClass = Class.forName("android.net.wifi.SoftApConfiguration\$Builder")
+        val builder = builderClass.getDeclaredConstructor().newInstance()
+        builderClass.getMethod("setSsid", String::class.java).invoke(builder, ssid)
+        builderClass.getMethod("setPassphrase", String::class.java, Int::class.javaPrimitiveType)
+            .invoke(builder, password, SoftApConfiguration.SECURITY_TYPE_WPA2_PSK)
+        builderClass.getMethod("setBand", Int::class.javaPrimitiveType).invoke(builder, band)
+        builderClass.getMethod("setAutoShutdownEnabled", Boolean::class.javaPrimitiveType).invoke(builder, false)
+        builderClass.getMethod("setMacRandomizationSetting", Int::class.javaPrimitiveType).invoke(builder, RANDOMIZATION_NONE)
+        if (bssid != null) {
+            builderClass.getMethod("setBssid", MacAddress::class.java).invoke(builder, MacAddress.fromString(bssid))
+        }
+        return builderClass.getMethod("build").invoke(builder) as SoftApConfiguration
+    }
+
+    /**
+     * Reads SSID/BSSID/band off the granted reservation for logging, entirely via reflection —
+     * `SoftApConfiguration`'s getters are not reliably part of the public stub across compileSdk
+     * levels (see [HotspotConfigReader], which does the same for the same reason).
+     */
+    private fun describeReservation(res: WifiManager.LocalOnlyHotspotReservation): String = try {
+        val configClass = Class.forName("android.net.wifi.SoftApConfiguration")
+        val config = res.javaClass.getMethod("getSoftApConfiguration").invoke(res)
+        val ssid = configClass.getMethod("getSsid").invoke(config)
+        val bssid = try { configClass.getMethod("getBssid").invoke(config) } catch (e: Exception) { "?" }
+        val band = try { configClass.getMethod("getBand").invoke(config) } catch (e: Exception) { "?" }
+        "ssid=$ssid, bssid=$bssid, band=$band"
+    } catch (e: Exception) {
+        "<unavailable: ${e.message}>"
     }
 
     /**
@@ -205,299 +290,5 @@ object HotspotManager {
     } catch (e: Exception) {
         AppLog.w("HotspotManager: Could not read the band preference (${e.message}); asking for 5 GHz and falling back.")
         HotspotBandPreference.AUTO
-    }
-
-    /**
-     * What one band's worth of start attempts achieved: whether anything was tried, whether an
-     * access point actually came up, and whether the band we asked for ever reached the framework.
-     */
-    private data class BandOutcome(val attempted: Boolean, val up: Boolean, val configured: Boolean)
-
-    /**
-     * What to say about an access point that is up, given whether the band request was accepted.
-     *
-     * Naming a band we only *asked* for is how a log ends up contradicting the radio. Measured on a
-     * unit that refuses `setSoftApConfiguration()`: this said 2.4 GHz while the access point that
-     * came up 8.7 s later was on 5745 MHz, so a reader with only the log would have concluded the
-     * exact opposite of what happened. The band is not readable from an ordinary app — `SoftApInfo`
-     * arrives on a callback that needs NETWORK_SETTINGS — so the honest line names what was
-     * requested and what became of the request, and nothing else.
-     */
-    private fun describeApUp(configured: Boolean, band: ApBand): String =
-        if (configured) {
-            "HotspotManager: Hotspot is up, and this device accepted the request for ${SoftApBandPolicy.describe(band)}."
-        } else {
-            "HotspotManager: Hotspot is up, but this device refused the request for ${SoftApBandPolicy.describe(band)} — the band is whatever it already had configured, which this app cannot read. If the projection dies seconds after connecting with no picture, check the hotspot's channel: on 2.4 GHz a full-resolution stream was measured to do exactly that, while a lower resolution and frame rate held."
-        }
-
-    private fun startOnBand(context: Context, enabled: Boolean, band: ApBand): BandOutcome {
-        // [BUG_FIX] Must fall through, not return. enableHotspot() only calls
-        // setSoftApConfiguration() — it configures an access point, it does not start one — yet
-        // its `true` used to short-circuit the whole function, so on API 30+ we wrote the SSID and
-        // passphrase, reported success, and ran no start path at all. The hotspot stayed off.
-        val configured = SoftApConfigCompat.enableHotspot(context, enabled, band)
-        if (configured) {
-            AppLog.i("HotspotManager: SoftAp configuration applied; now starting the hotspot.")
-        }
-        // Newer API: TetheringManager (official) before ConnectivityManager fallback
-        var attempted = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            attempted = tryTetheringManager(context, enabled) || attempted
-        }
-        // The remaining reflection paths (startTethering / setWifiApEnabled) require the special
-        // "Modify system settings" access (WRITE_SETTINGS). Without it the framework throws a
-        // SecurityException, so check first and surface a clear, actionable message instead.
-        if (AppPermissions.isWriteSettingsGranted(context)) {
-            attempted = tryConnectivityManager(context, enabled) || attempted
-            attempted = tryLegacyWifiManager(context, enabled) || attempted
-        } else {
-            AppLog.w("HotspotManager: Cannot enable the hotspot without the \"Modify system settings\" permission (WRITE_SETTINGS). Grant it in the setup wizard or Settings > Permissions.")
-        }
-
-        if (!enabled) return BandOutcome(attempted, up = false, configured = configured)
-
-        // [BUG_FIX] Confirm the access point instead of trusting the call that asked for it. Every
-        // start path here is reflection over an API whose real answer arrives later on a callback
-        // we cannot construct, so `invoke()` returning tells us only that the request was posted:
-        // on one head unit the framework refused it a millisecond later ("Tethering is already
-        // active or in recovering") while this method reported success and logged nothing at all.
-        // Only "an access point is up" is worth reporting as success.
-        return BandOutcome(attempted, up = awaitApUp(context), configured = configured)
-    }
-
-    /**
-     * Says so when a failed start has left the radio with neither a station nor an access point.
-     *
-     * The framework drops the station to free the radio for tethering; if the attempt then backs
-     * out, nothing brings it back. This app cannot: setWifiEnabled() is a no-op at its target SDK,
-     * so the only way out is the user toggling WiFi. Worth one clear line, because the symptom
-     * downstream is a WiFi Direct group that never forms and no obvious reason why.
-     */
-    private fun warnIfRadioLeftDown(context: Context) {
-        try {
-            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            if (!wm.isWifiEnabled) {
-                AppLog.w("HotspotManager: WiFi is off and no access point came up, so this radio is now carrying neither. Nothing here can switch WiFi back on at this target SDK — toggle WiFi on the device before trying WiFi Direct, or it will not form a group.")
-            }
-        } catch (e: Exception) {
-            AppLog.d("HotspotManager: Could not read the WiFi state: ${e.message}")
-        }
-    }
-
-    /**
-     * Polls until a soft AP is up or the timeout expires.
-     *
-     * `getWifiApState()` is hidden but widely present; where it is blocked, fall back to looking
-     * for the interface, which is what a running access point is from the outside anyway.
-     */
-    private fun awaitApUp(context: Context): Boolean {
-        val deadline = System.currentTimeMillis() + AP_STATE_TIMEOUT_MS
-        while (true) {
-            if (isApUp(context)) return true
-            if (System.currentTimeMillis() >= deadline) return false
-            try { Thread.sleep(400) } catch (e: InterruptedException) { return false }
-        }
-    }
-
-    /** Whether a soft AP is running right now, by framework state or, failing that, by interface. */
-    private fun isApUp(context: Context): Boolean = when (SoftApStateReader.read(context)) {
-        SoftApState.ENABLED -> true
-        SoftApState.NOT_ENABLED -> false
-        // Nothing was learned, so fall back to what an access point looks like from outside.
-        SoftApState.UNKNOWN -> hasApInterface(context)
-    }
-
-    /**
-     * Whether any interface is one this device is hosting an access point on. Uses the same policy
-     * object SoftApCredentialsProvider uses to find the AP it will advertise, so the two cannot
-     * disagree about whether one exists.
-     */
-    private fun hasApInterface(context: Context): Boolean = try {
-        val stationIpv4 = NetworkAddresses.stationIpv4(context)
-        NetworkInterface.getNetworkInterfaces().toList().any { nif ->
-            SoftApNetworkPolicy.isApHost(
-                ApInterfaceCandidate(
-                    name = nif.name,
-                    isLoopback = try { nif.isLoopback } catch (e: Exception) { false },
-                    isUp = try { nif.isUp } catch (e: Exception) { false },
-                    siteLocalIpv4 = nif.inetAddresses.toList()
-                        .filterIsInstance<Inet4Address>()
-                        .firstOrNull { it.isSiteLocalAddress }
-                        ?.hostAddress
-                ),
-                stationIpv4
-            )
-        }
-    } catch (e: Exception) {
-        false
-    }
-
-    // The try* paths below return "the request was posted without throwing", not "the hotspot
-    // started" — the framework answers asynchronously, on a callback we cannot build. Only
-    // setHotspotEnabled() decides success, and it does so by looking for the access point.
-    private fun tryConnectivityManager(context: Context, enabled: Boolean): Boolean {
-        try {
-            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-            if (!enabled) {
-                val stopMethod = cm.javaClass.methods.find { it.name == "stopTethering" }
-                if (stopMethod != null) {
-                    stopMethod.isAccessible = true
-                    stopMethod.invoke(cm, 0)
-                    return true
-                }
-                return false
-            }
-
-            val startMethod = cm.javaClass.methods.find {
-                it.name == "startTethering" && it.parameterTypes.size >= 4
-            } ?: return false
-
-            startMethod.isAccessible = true
-            // Same hazard as the TetheringManager path: the framework dispatches onto this object
-            // without a null check. If the shim could not be built, skip rather than crash.
-            val callbackInst = createTetheringCallback(context) ?: return false
-            val handler = Handler(Looper.getMainLooper())
-
-            return when (startMethod.parameterTypes.size) {
-                4 -> {
-                    startMethod.invoke(cm, 0, false, callbackInst, handler)
-                    true
-                }
-                5 -> {
-                    startMethod.invoke(cm, 0, false, callbackInst, handler, context.packageName)
-                    true
-                }
-                else -> false
-            }
-        } catch (e: Exception) {
-            AppLog.e("HotspotManager: CM path failed", e)
-            return false
-        }
-    }
-
-    /**
-     * A do-nothing implementation of [type], or null if one cannot be made.
-     *
-     * `TetheringManager.StartTetheringCallback` is an interface whose methods are all default
-     * no-ops, so a [java.lang.reflect.Proxy] is enough and none of DexMaker's problems apply. If
-     * it ever turns out not to be an interface, returning null makes the caller skip the request
-     * rather than fall back to passing null and crashing again.
-     *
-     * The handler answers `hashCode`/`equals`/`toString` itself: returning null from those is its
-     * own NullPointerException the first time anything logs or hashes the object.
-     */
-    private fun noOpCallback(type: Class<*>): Any? = try {
-        if (!type.isInterface) {
-            AppLog.w("HotspotManager: ${type.name} is not an interface, so no callback can be made for it; skipping the request rather than passing null.")
-            null
-        } else {
-            java.lang.reflect.Proxy.newProxyInstance(type.classLoader, arrayOf(type)) { proxy, method, args ->
-                when (method.name) {
-                    "hashCode" -> System.identityHashCode(proxy)
-                    "equals" -> proxy === args?.getOrNull(0)
-                    "toString" -> "${type.simpleName}(no-op)"
-                    else -> null
-                }
-            }
-        }
-    } catch (e: Exception) {
-        AppLog.w("HotspotManager: Could not build a no-op ${type.simpleName}: ${e.message}")
-        null
-    }
-
-    /**
-     * A `TetheringRequest` for WiFi tethering, via its Builder, or null if it cannot be built.
-     * Only needed on platforms that dropped the plain `(int, …)` overload of startTethering.
-     */
-    private fun buildTetheringRequest(): Any? = try {
-        val builderClass = Class.forName("android.net.TetheringManager\$TetheringRequest\$Builder")
-        val builder = builderClass.getConstructor(Int::class.javaPrimitiveType)
-            .newInstance(TETHERING_WIFI)
-        builderClass.getMethod("build").invoke(builder)
-    } catch (e: Exception) {
-        AppLog.d("HotspotManager: Could not build a TetheringRequest: ${e.message}")
-        null
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    private fun createTetheringCallback(context: Context): Any? {
-        try {
-            cachedCallbackClass?.let { cls ->
-                return cls.getDeclaredConstructor().newInstance()
-            }
-
-            val parentClass = Class.forName(CALLBACK_CLASS) ?: return null
-            val dexMaker = DexMaker()
-            val getByName: Method = TypeId::class.java.getDeclaredMethod("get", String::class.java)
-            val getByClass: Method = TypeId::class.java.getDeclaredMethod("get", Class::class.java)
-
-            val generatedType = getByName.invoke(null, "LTetheringCallback;") as TypeId<Any>
-            val parentType = getByClass.invoke(null, parentClass) as TypeId<Any>
-
-            dexMaker.declare(generatedType, "TetheringCallback.generated", java.lang.reflect.Modifier.PUBLIC, parentType)
-
-            val constructor = generatedType.getConstructor() as com.android.dx.MethodId<Any, Void>
-            val parentConstructor = parentType.getConstructor() as com.android.dx.MethodId<Any, Void>
-            val code = dexMaker.declare(constructor, java.lang.reflect.Modifier.PUBLIC)
-            val thisRef = code.getThis(generatedType)
-            code.invokeDirect(parentConstructor, null, thisRef)
-            code.returnVoid()
-
-            val dexCache = context.codeCacheDir
-            val classLoader = dexMaker.generateAndLoad(this.javaClass.classLoader, dexCache)
-            val generatedClass = classLoader.loadClass("TetheringCallback")
-            cachedCallbackClass = generatedClass
-
-            return generatedClass.getDeclaredConstructor().newInstance()
-        } catch (e: Exception) {
-            AppLog.e("HotspotManager: Dexmaker failed", e)
-            return null
-        }
-    }
-
-    private fun tryTetheringManager(context: Context, enabled: Boolean): Boolean {
-        try {
-            val tm = context.getSystemService("tethering") ?: return false
-            if (enabled) {
-                // [BUG_FIX] Pick the overload by argument *type*, not by argument count. API 34
-                // carries two 3-arg startTethering methods — (TetheringRequest, Executor,
-                // StartTetheringCallback) and (int, Executor, StartTetheringCallback) — and
-                // find{} returned whichever the reflection order happened to yield, so passing
-                // the tethering type as an Integer threw "argument 1 has type TetheringRequest".
-                val overloads = tm.javaClass.methods.filter {
-                    it.name == "startTethering" && it.parameterTypes.size == 3
-                }
-                val byType = overloads.find { it.parameterTypes[0] == Int::class.javaPrimitiveType }
-                val byRequest = overloads.find { it.parameterTypes[0].name.endsWith("TetheringRequest") }
-                val method = byType ?: byRequest ?: return false
-
-                // [BUG_FIX] Never pass null for the callback. The framework dispatches
-                // onTetheringStarted()/onTetheringFailed() onto it through the executor with no
-                // null check, so null crashed the app outright the moment tethering finished
-                // starting. It only shows up when the attempt gets far enough to report back — a
-                // request refused immediately never dispatches anything, which is why this hid
-                // behind an "already active" refusal the first time round.
-                val callback = noOpCallback(method.parameterTypes[2]) ?: return false
-
-                val first: Any = if (method === byType) TETHERING_WIFI else buildTetheringRequest() ?: return false
-                method.invoke(tm, first, context.mainExecutor, callback)
-                return true
-            } else {
-                val stopMethod = tm.javaClass.methods.find { it.name == "stopTethering" }
-                stopMethod?.invoke(tm, 0)
-                return true
-            }
-        } catch (e: Exception) {
-            AppLog.e("HotspotManager: TetheringManager path failed", e)
-            return false
-        }
-    }
-
-    private fun tryLegacyWifiManager(context: Context, enabled: Boolean): Boolean {
-        try {
-            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
-            val method = wm.javaClass.getMethod("setWifiApEnabled", android.net.wifi.WifiConfiguration::class.java, Boolean::class.javaPrimitiveType)
-            return method.invoke(wm, null, enabled) as Boolean
-        } catch (_: Exception) { return false }
     }
 }

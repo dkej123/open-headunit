@@ -108,7 +108,8 @@ class AapService : Service(), UsbReceiver.Listener {
     private var nightModeManager: NightModeManager? = null
     private var wifiDirectManager: WifiDirectManager? = null
     // The hotspot transport's credential source, the alternative to wifiDirectManager for mode 3.
-    // Constructed alongside it so both can be wired once; only one of the two is start()ed.
+    // WifiDirectManager is deliberately created lazily: constructing it initializes Android's P2P
+    // stack, which tears down SoftAP on chipsets that cannot run both interfaces concurrently.
     private var softApCredentialsProvider: SoftApCredentialsProvider? = null
     private var nativeAaHandshakeManager: NativeAaHandshakeManager? = null
     private var nearbyManager: NearbyManager? = null
@@ -766,7 +767,6 @@ class AapService : Service(), UsbReceiver.Listener {
         syncLogBackendState()
 
         nativeAaHandshakeManager = NativeAaHandshakeManager(this, serviceScope)
-        wifiDirectManager = WifiDirectManager(this)
         softApCredentialsProvider = SoftApCredentialsProvider(this, serviceScope, App.provide(this).settings)
 
         // Before anything can start a transport, not after. initWifiMode() runs inline on this
@@ -776,18 +776,6 @@ class AapService : Service(), UsbReceiver.Listener {
         // the provider, having found its network, never looked again: no poke, no credentials for
         // the handshake, and a head unit that sits there looking healthy. CredentialsHandoff
         // latches as well, so neither half of this depends on the other being right.
-        wifiDirectManager?.setCredentialsListener { ssid, psk, ip, bssid ->
-            onNativeCredentials(ssid, psk, ip, bssid)
-        }
-        // Settling counts as in-flight here: isHandshakeInFlight() goes false the instant Type 3
-        // is written, but the phone still has to associate, do WPS and get a DHCP lease, and
-        // recreating the group in that window hands it an SSID it can no longer join.
-        wifiDirectManager?.setNativeHandshakeStateProvider {
-            nativeAaHandshakeManager?.isHandshakeInFlight() == true ||
-                nativeAaHandshakeManager?.isHandoffSettling() == true
-        }
-        wifiDirectManager?.setNativeSessionConnectedProvider { commManager.isConnected }
-        wifiDirectManager?.setNativeGroupInvalidatedListener { nativeAaHandshakeManager?.invalidateCredentials() }
         softApCredentialsProvider?.setCredentialsListener { ssid, psk, ip, bssid ->
             onNativeCredentials(ssid, psk, ip, bssid)
         }
@@ -817,6 +805,37 @@ class AapService : Service(), UsbReceiver.Listener {
         scheduleBootLoopStrikeClear()
         checkAlreadyConnectedUsb()
         registerNetworkMonitor()
+    }
+
+    /**
+     * Creates and wires the P2P manager only for a mode that actually uses Wi-Fi Direct.
+     * Merely constructing [WifiDirectManager] calls WifiP2pManager.initialize/requestDeviceInfo,
+     * so eager construction is not harmless while the tablet is hosting a SoftAP.
+     */
+    private fun ensureWifiDirectManager(): WifiDirectManager {
+        wifiDirectManager?.let { return it }
+
+        return WifiDirectManager(this).also { manager ->
+            manager.setCredentialsListener { ssid, psk, ip, bssid ->
+                onNativeCredentials(ssid, psk, ip, bssid)
+            }
+            // Settling counts as in-flight here: isHandshakeInFlight() goes false the instant
+            // Type 3 is written, but the phone still has to associate, do WPS and get DHCP.
+            manager.setNativeHandshakeStateProvider {
+                nativeAaHandshakeManager?.isHandshakeInFlight() == true ||
+                    nativeAaHandshakeManager?.isHandoffSettling() == true
+            }
+            manager.setNativeSessionConnectedProvider { commManager.isConnected }
+            manager.setNativeGroupInvalidatedListener {
+                nativeAaHandshakeManager?.invalidateCredentials()
+            }
+            wifiDirectManager = manager
+        }
+    }
+
+    private fun releaseWifiDirectManager() {
+        wifiDirectManager?.stop()
+        wifiDirectManager = null
     }
 
     /** Enables Android Automotive UI mode so the system uses car-optimised layouts. */
@@ -1682,8 +1701,9 @@ class AapService : Service(), UsbReceiver.Listener {
         val usesWifiDirect = WifiModePolicy.usesWifiDirect(mode, strategy, nativeTransport())
         if (!usesWifiDirect) {
             AppLog.i("AapService: New mode does not use WiFi Direct. Stopping WifiDirectManager...")
-            wifiDirectManager?.stop()
+            releaseWifiDirectManager()
         } else {
+            ensureWifiDirectManager()
             // This chipset can't run SoftAP and WiFi Direct concurrently — make sure hotspot is off before P2P starts.
             Thread {
                 AppLog.i("AapService: Mode requires WiFi Direct — ensuring hotspot is disabled first...")
@@ -2006,7 +2026,7 @@ class AapService : Service(), UsbReceiver.Listener {
         stopForeground(true)
         stopWirelessServer()
         stopDummyVpn(DummyVpnPolicy.Reason.SERVICE_DESTROYED)
-        wifiDirectManager?.stop()
+        releaseWifiDirectManager()
         nearbyManager?.stop()
         try {
             mediaSession?.let {
@@ -2744,7 +2764,7 @@ class AapService : Service(), UsbReceiver.Listener {
             softApCredentialsProvider?.refresh()
         } else {
             AppLog.i("AapService: WiFi Direct refresh requested.")
-            wifiDirectManager?.startNativeAaQuietHost()
+            ensureWifiDirectManager().startNativeAaQuietHost()
         }
     }
 

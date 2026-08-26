@@ -67,7 +67,7 @@ class Settings(private val context: Context) {
         }
 
     var resolutionId: Int
-        get() = prefs.getInt("resolutionId", 0)
+        get() = prefs.getInt("resolutionId", 3)
         set(value) = prefs.edit().putInt("resolutionId", value).apply()
 
     // Flag to determine if the projection should stretch and ignore aspect ratio to fill the screen
@@ -191,7 +191,7 @@ class Settings(private val context: Context) {
 
     var viewMode: ViewMode
         get() {
-            val value = prefs.getInt("view-mode", 1)
+            val value = prefs.getInt("view-mode", 0)
             return ViewMode.fromInt(value)!!
         }
         set(viewMode) {
@@ -200,15 +200,15 @@ class Settings(private val context: Context) {
 
     var screenOrientation: ScreenOrientation
         get() {
-            val value = prefs.getInt(KEY_SCREEN_ORIENTATION, 0)
-            return ScreenOrientation.fromInt(value) ?: ScreenOrientation.SYSTEM
+            val value = prefs.getInt(KEY_SCREEN_ORIENTATION, 2)
+            return ScreenOrientation.fromInt(value) ?: ScreenOrientation.LANDSCAPE
         }
         set(orientation) {
             prefs.edit().putInt(KEY_SCREEN_ORIENTATION, orientation.value).apply()
         }
 
     var dpiPixelDensity: Int
-        get() = prefs.getInt("dpi-pixel-density", 0) // Default 0 for Auto
+        get() = prefs.getInt("dpi-pixel-density", 190)
         set(value) {
             prefs.edit().putInt("dpi-pixel-density", value).apply()
         }
@@ -220,7 +220,7 @@ class Settings(private val context: Context) {
         }
 
     var staticBSSID: String?
-        get() = try { prefs.getString("static-bssid", "0") } catch (e: Exception) { "0" } // Default 0 for Auto
+        get() = try { prefs.getString("static-bssid", "02:aa:17:00:00:01") } catch (e: Exception) { "02:aa:17:00:00:01" }
         set(value) {
             prefs.edit().putString("static-bssid", value).apply()
         }
@@ -477,11 +477,11 @@ class Settings(private val context: Context) {
         // Cosmetic: the phone shows this in its connection history and on the Android Auto
         // welcome screen. It is not the reported manufacturer, which stays "Google" unless
         // the user picks a real car brand — see the car step in OnboardingActivity.
-        get() = prefs.getString("vehicle-display-name", "Open Headunit")!!
+        get() = prefs.getString("vehicle-display-name", "Toyota Jacek")!!
         set(value) { prefs.edit().putString("vehicle-display-name", value).apply() }
 
     var vehicleMake: String
-        get() = prefs.getString("vehicle-make", "Google")!!
+        get() = prefs.getString("vehicle-make", "Toyota Jacek")!!
         set(value) { prefs.edit().putString("vehicle-make", value).apply() }
 
     var vehicleModel: String
@@ -497,7 +497,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putString("vehicle-id", value).apply() }
 
     var headUnitMake: String
-        get() = prefs.getString("head-unit-make", "Google")!!
+        get() = prefs.getString("head-unit-make", "Toyota Jacek")!!
         set(value) { prefs.edit().putString("head-unit-make", value).apply() }
 
     var headUnitModel: String
@@ -519,16 +519,16 @@ class Settings(private val context: Context) {
                 prefs.edit().putInt("wifi-connection-mode", 3).remove("native-aa-wireless").apply()
                 return 3
             }
-            return prefs.getInt("wifi-connection-mode", 2) // Default 2 (Wireless Helper)
+            return prefs.getInt("wifi-connection-mode", 3) // Default 3 (Native AA)
         }
         set(value) { prefs.edit().putInt("wifi-connection-mode", value).apply() }
 
     var videoCodec: String
-        get() = prefs.getString("video-codec", "Auto")!!
+        get() = prefs.getString("video-codec", "H.264")!!
         set(value) { prefs.edit().putString("video-codec", value).apply() }
 
     var fpsLimit: Int
-        get() = prefs.getInt("fps-limit", 60)
+        get() = prefs.getInt("fps-limit", 30)
         set(value) { prefs.edit().putInt("fps-limit", value).apply() }
 
     var hasAcceptedDisclaimer: Boolean
@@ -587,7 +587,7 @@ class Settings(private val context: Context) {
         ConnectionKind.WIFI, ConnectionKind.NATIVE_AA -> setOf(ConnectionMode.WIFI)
         ConnectionKind.SELF_MODE -> setOf(ConnectionMode.SELF)
         ConnectionKind.ALL -> setOf(ConnectionMode.USB, ConnectionMode.WIFI)
-        ConnectionKind.UNSET -> emptySet()
+        ConnectionKind.UNSET -> setOf(ConnectionMode.USB, ConnectionMode.WIFI)
     }
 
     /** Whether USB-related settings should be shown (empty selection shows everything). */
@@ -598,7 +598,7 @@ class Settings(private val context: Context) {
     fun showsExternalGps(): Boolean = showsUsb() || showsWifi()
 
     var autoConnectLastSession: Boolean
-        get() = prefs.getBoolean("auto-connect-last-session", false)
+        get() = prefs.getBoolean("auto-connect-last-session", true)
         set(value) { prefs.edit().putBoolean("auto-connect-last-session", value).apply() }
 
     var autoConnectSingleUsbDevice: Boolean
@@ -643,7 +643,7 @@ class Settings(private val context: Context) {
     // PlaybackFocusPolicy for the whole story; ALWAYS and NEVER are the manual overrides.
     var playbackFocusMode: PlaybackFocusPolicy.Mode
         get() = PlaybackFocusPolicy.Mode.fromInt(
-            prefs.getInt("playback-focus-mode", PlaybackFocusPolicy.Mode.AUTO.value)
+            prefs.getInt("playback-focus-mode", PlaybackFocusPolicy.Mode.ALWAYS.value)
         )
         set(value) { prefs.edit().putInt("playback-focus-mode", value.value).apply() }
 
@@ -666,7 +666,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putInt("mic-input-source", value).apply() }
 
     var audioLatencyMultiplier: Int
-        get() = prefs.getInt("audio-latency-multiplier", 8)
+        get() = prefs.getInt("audio-latency-multiplier", 4)
         set(value) { prefs.edit().putInt("audio-latency-multiplier", value).apply() }
 
     // Chunks the audio thread may hold before it starts dropping, or 0 for no limit. Bounded by
@@ -734,7 +734,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putString("auto-start-wifi-ssid", value).apply() }
 
     var listenForUsbDevices: Boolean
-        get() = prefs.getBoolean("listen-for-usb-devices", true)
+        get() = prefs.getBoolean("listen-for-usb-devices", false)
         set(value) { prefs.edit().putBoolean("listen-for-usb-devices", value).apply() }
 
     var showToastMessages: Boolean
@@ -798,7 +798,7 @@ class Settings(private val context: Context) {
         }
 
     var appLanguage: String
-        get() = prefs.getString("app-language", "")!!
+        get() = prefs.getString("app-language", "pl")!!
         set(value) { prefs.edit().putString("app-language", value).apply() }
 
     var mediaVolumeOffset: Int
@@ -851,7 +851,7 @@ class Settings(private val context: Context) {
             syncAutoStartOnScreenOnToDeviceStorage(context, false)
             syncAutoStartOnUsbToDeviceStorage(context, false)
             syncAutoStartOnWifiToDeviceStorage(context, false)
-            syncListenForUsbDevicesToDeviceStorage(context, true)
+            syncListenForUsbDevicesToDeviceStorage(context, false)
             syncAutoStartBtMacToDeviceStorage(context, "")
         }
     }
@@ -1248,7 +1248,7 @@ class Settings(private val context: Context) {
             } else {
                 context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             }
-            return prefs.getBoolean(KEY_LISTEN_FOR_USB_DEVICES, true) // Default is TRUE
+            return prefs.getBoolean(KEY_LISTEN_FOR_USB_DEVICES, false)
         }
 
         fun syncListenForUsbDevicesToDeviceStorage(context: Context, enabled: Boolean) {
@@ -1435,7 +1435,7 @@ class Settings(private val context: Context) {
         set(value) { prefs.edit().putBoolean("kill-on-disconnect", value).apply() }
 
     var autoEnableHotspot: Boolean
-        get() = prefs.getBoolean("auto-enable-hotspot", false)
+        get() = prefs.getBoolean("auto-enable-hotspot", true)
         set(value) { prefs.edit().putBoolean("auto-enable-hotspot", value).apply() }
 
     var waitForWifiBeforeWifiDirect: Boolean
@@ -1448,7 +1448,7 @@ class Settings(private val context: Context) {
 
     // 0 = Common Wifi (NSD), 1 = Wifi Direct P2P, 2 = Nearby Devices, 3 = Phone Hotspot (Host), 4 = Headunit Hotspot (Passive)
     var helperConnectionStrategy: Int
-        get() = prefs.getInt("helper-connection-strategy", 2) // Default to Nearby Devices (2)
+        get() = prefs.getInt("helper-connection-strategy", 3) // Default to Phone Hotspot (Host) (3)
         set(value) = prefs.edit().putInt("helper-connection-strategy", value).apply()
 
     var lastNearbyDeviceName: String
@@ -1466,7 +1466,7 @@ class Settings(private val context: Context) {
     // means something different in every one of its five values. A wireless mode that reuses
     // another mode's selector is how the two call sites of the old usesWifiDirect() drifted apart.
     var nativeApTransport: Int
-        get() = prefs.getInt("native-ap-transport", 0)
+        get() = prefs.getInt("native-ap-transport", 1)
         set(value) = prefs.edit().putInt("native-ap-transport", value).apply()
 
     // Whether the Native AA handshake opens with a WifiVersionRequest (Type 4), as real head units
@@ -1535,7 +1535,7 @@ class Settings(private val context: Context) {
     // hostapd.conf, and ZLink carries an ap_NIC_name field. We are the only one reading an AP we
     // did not create, so we are the only one that has to guess.
     var hotspotInterface: String
-        get() = prefs.getString("hotspot-interface", "")!!
+        get() = prefs.getString("hotspot-interface", "ap0")!!
         set(value) = prefs.edit().putString("hotspot-interface", value).apply()
 
     // Manual override for the head unit's own access point, used first by
@@ -1543,11 +1543,11 @@ class Settings(private val context: Context) {
     // configuration instead. Worth having because getSoftApConfiguration() is reflection over a
     // non-public API and can simply refuse on a locked-down API 30+ device.
     var hotspotSsid: String
-        get() = prefs.getString("hotspot-ssid", "")!!
+        get() = prefs.getString("hotspot-ssid", "AndroidAuto-Lenovo")!!
         set(value) = prefs.edit().putString("hotspot-ssid", value).apply()
 
     var hotspotPassword: String
-        get() = prefs.getString("hotspot-password", "")!!
+        get() = prefs.getString("hotspot-password", "AutoLink-9284")!!
         set(value) = prefs.edit().putString("hotspot-password", value).apply()
 
     // Which band to ask for when this app brings the head unit's access point up.

@@ -465,8 +465,6 @@
     <string name="auto_enable_hotspot_description">Tự động bật điểm phát Wi-Fi trên thiết bị này. (Không hoạt động trên mọi máy)</string>
     <string name="hotspot_warning_title">Tính năng thử nghiệm</string>
     <string name="hotspot_warning_message">Tính năng này dùng reflection và có thể không hoạt động trên mọi máy. Cũng có thể cần cấp quyền \"Thay đổi cài đặt hệ thống\" thủ công.</string>
-    <string name="hotspot_permission_title">Cần cấp quyền</string>
-    <string name="hotspot_permission_message">Tính năng điểm phát sóng cần quyền \"Thay đổi cài đặt hệ thống\". Vui lòng bật ở màn hình kế tiếp.</string>
 
     <string name="supported_nativeaa">Hỗ trợ không dây nâng cao</string>
     <string name="supported_nativeaa_desc">Tin tốt! Máy của bạn hỗ trợ chế độ \"Native Wireless\", mang lại trải nghiệm Android Auto liền mạch hơn. \n\nĐể bật, cần làm mới bộ nhớ đệm Bluetooth. Vui lòng: \n1. Xoá ghép nối hiện có trên điện thoại \n2. Bấm OK để khởi động lại Bluetooth \n3. Ghép nối lại điện thoại \n\nBạn có muốn chuyển sang chế độ Native AA bây giờ?</string>
