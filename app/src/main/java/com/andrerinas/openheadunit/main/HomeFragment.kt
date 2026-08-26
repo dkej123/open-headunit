@@ -75,9 +75,15 @@ class HomeFragment : Fragment() {
     private lateinit var wifi_text_view: TextView
     private lateinit var exitButton: Button
     private lateinit var self_mode_text: TextView
+    private lateinit var mainButtonsLayout: View
+    private lateinit var simplifiedConnectLayout: View
+    private lateinit var connectButton: Button
+    private lateinit var connectButtonText: TextView
+    private lateinit var fullMenuLabel: View
     private var hasAttemptedAutoConnect = false
     private var hasAttemptedSingleUsbAutoConnect = false
     private var activeDialog: androidx.appcompat.app.AlertDialog? = null
+    private var showFullMenuOverride = false
 
     private fun updateWifiButtonFeedback(scanning: Boolean) {
         if (scanning) {
@@ -103,6 +109,11 @@ class HomeFragment : Fragment() {
         wifi_text_view = view.findViewById(R.id.wifi_text)
         exitButton = view.findViewById(R.id.exit_button)
         self_mode_text = view.findViewById(R.id.self_mode_text)
+        mainButtonsLayout = view.findViewById(R.id.main_buttons_layout)
+        simplifiedConnectLayout = view.findViewById(R.id.simplified_connect_layout)
+        connectButton = view.findViewById(R.id.connect_button)
+        connectButtonText = view.findViewById(R.id.connect_button_text)
+        fullMenuLabel = view.findViewById(R.id.full_menu_label)
 
         // Portrait layout: cap grid width so square buttons never overflow
         // into the WiFi-pill or Exit-button areas on compact/square devices.
@@ -112,6 +123,7 @@ class HomeFragment : Fragment() {
 
         setupListeners()
         updateProjectionButtonText()
+        updateHomeScreenMode()
 
         viewLifecycleOwner.lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -343,6 +355,22 @@ class HomeFragment : Fragment() {
     }
 
     private fun setupListeners() {
+        connectButton.setOnClickListener {
+            val device = getRememberedNativeAaDevice()
+            if (device != null) {
+                connectToNativeAaDevice(device)
+            } else {
+                // Device vanished (unpaired, BT off, permission revoked) since the
+                // screen was last shown - fall back to the full menu.
+                updateHomeScreenMode()
+            }
+        }
+
+        fullMenuLabel.setOnClickListener {
+            showFullMenuOverride = true
+            updateHomeScreenMode()
+        }
+
         exitButton.setOnClickListener {
             val appSettings = App.provide(requireContext()).settings
             val keepServiceAlive = appSettings.autoStartOnBoot ||
@@ -611,6 +639,7 @@ class HomeFragment : Fragment() {
         updateProjectionButtonText()
         updateButtonStyle()
         updateTextColors()
+        updateHomeScreenMode()
         activity?.let { act ->
             if (!act.isFinishing && !act.isDestroyed) {
                 RenameNotice.maybeShow(act, App.provide(requireContext()).settings)
@@ -647,20 +676,70 @@ class HomeFragment : Fragment() {
             .setItems(deviceNames) { _, which ->
                 val device = bondedDevices[which]
                 AppLog.i("HomeFragment: Manually selected ${device.name} for Native-AA poke")
-
-                (requireActivity() as? MainActivity)?.beginAutoConnect(
-                    "manual Native-AA poke",
-                    MainActivity.ConnectionUiMode.OVERLAY
-                )
-                val intent = Intent(requireContext(), AapService::class.java).apply {
-                    action = AapService.ACTION_NATIVE_AA_POKE
-                    putExtra(AapService.EXTRA_MAC, device.address)
-                }
-                ContextCompat.startForegroundService(requireContext(), intent)
-                Toast.makeText(requireContext(), "Searching for ${device.name}...", Toast.LENGTH_SHORT).show()
+                App.provide(requireContext()).settings.lastNativeAaDeviceAddress = device.address
+                connectToNativeAaDevice(device)
             }
             .setNegativeButton(R.string.cancel, null)
             .show()
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun connectToNativeAaDevice(device: android.bluetooth.BluetoothDevice) {
+        (requireActivity() as? MainActivity)?.beginAutoConnect(
+            "manual Native-AA poke",
+            MainActivity.ConnectionUiMode.OVERLAY
+        )
+        val intent = Intent(requireContext(), AapService::class.java).apply {
+            action = AapService.ACTION_NATIVE_AA_POKE
+            putExtra(AapService.EXTRA_MAC, device.address)
+        }
+        ContextCompat.startForegroundService(requireContext(), intent)
+        Toast.makeText(requireContext(), "Searching for ${device.name}...", Toast.LENGTH_SHORT).show()
+    }
+
+    /**
+     * Returns the remembered Native-AA device to skip the picker with a single
+     * "Connect" button, or `null` if the picker/full menu should be shown
+     * (wrong mode, no remembered device, BT off, permission missing, or the
+     * device is no longer paired).
+     */
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun getRememberedNativeAaDevice(): android.bluetooth.BluetoothDevice? {
+        val ctx = context ?: return null
+        val appSettings = App.provide(ctx).settings
+        if (appSettings.wifiConnectionMode != 3) return null
+
+        val address = appSettings.lastNativeAaDeviceAddress
+        if (address.isEmpty()) return null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            return null
+        }
+
+        val adapter = BluetoothHelper.getBluetoothAdapter(ctx) ?: return null
+        if (!adapter.isEnabled) return null
+
+        return adapter.bondedDevices?.firstOrNull { it.address == address }
+    }
+
+    /**
+     * Shows the single-tap "Connect" screen when a Native-AA device is
+     * remembered, otherwise falls back to the full button grid.
+     */
+    private fun updateHomeScreenMode() {
+        val rememberedDevice = if (showFullMenuOverride) null else getRememberedNativeAaDevice()
+        if (rememberedDevice != null) {
+            connectButtonText.text = rememberedDevice.name ?: getString(R.string.connect)
+            mainButtonsLayout.visibility = View.GONE
+            simplifiedConnectLayout.visibility = View.VISIBLE
+        } else {
+            simplifiedConnectLayout.visibility = View.GONE
+            mainButtonsLayout.visibility = View.VISIBLE
+        }
+        // Exit stays available in both modes - it's positioned independently
+        // of the grid/simplified layout, anchored at the bottom-right corner.
+        exitButton.visibility = View.VISIBLE
     }
 
     private fun showNearbyDeviceSelector() {

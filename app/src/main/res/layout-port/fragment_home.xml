@@ -269,6 +269,70 @@
 
     </LinearLayout>
 
+    <!-- Simplified single-tap connect screen shown when a Native AA device is remembered -->
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:id="@+id/simplified_connect_layout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/connect_button"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:elevation="6dp"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:backgroundTint="@null"
+            android:background="@drawable/gradient_purple"
+            app:iconGravity="textStart"
+            app:icon="@drawable/ic_network_wifi_white"
+            app:iconTint="#ffffff"
+            app:iconSize="88dp"
+            app:iconPadding="0dp"
+            android:paddingTop="0dp"
+            android:paddingBottom="0dp" />
+
+        <TextView
+            android:id="@+id/connect_button_text"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toBottomOf="@+id/connect_button"
+            app:layout_constraintStart_toStartOf="@+id/connect_button"
+            app:layout_constraintEnd_toEndOf="@+id/connect_button"
+            android:text="@string/connect"
+            android:textColor="@color/text_primary"
+            android:shadowColor="@color/text_shadow"
+            android:shadowDx="0"
+            android:shadowDy="0"
+            android:shadowRadius="8"
+            android:textSize="20sp"
+            android:textFontWeight="700"
+            android:gravity="center_horizontal"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/full_menu_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toEndOf="parent"
+            android:layout_margin="16dp"
+            android:padding="12dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:foreground="?attr/selectableItemBackgroundBorderless"
+            app:drawableTopCompat="@drawable/ic_apps"
+            android:drawableTint="@color/text_primary"
+            android:text="@string/menu"
+            android:textColor="@color/text_primary"
+            android:textSize="12sp"
+            android:gravity="center" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+
     <!-- Exit button — always at bottom-right, independent of the grid -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/exit_button"

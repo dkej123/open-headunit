@@ -2,6 +2,7 @@
     <string name="app_name">Open Headunit</string>
     <string name="menu">Menu</string>
     <string name="settings">Settings</string>
+    <string name="connect">Connect</string>
 
     <!-- Settings tabs and search (redesign) -->
     <string name="settings_tab_basic">Basic</string>

@@ -49,6 +49,10 @@ class Settings(private val context: Context) {
         get() = prefs.getString("bt-address", "")!!
         set(value) = prefs.edit().putString("bt-address", value).apply()
 
+    var lastNativeAaDeviceAddress: String
+        get() = prefs.getString("last-native-aa-device-address", "")!!
+        set(value) = prefs.edit().putString("last-native-aa-device-address", value).apply()
+
     var lastKnownLocation: Location
         get() {
             val latitudeBits = prefs.getLong("last-loc-latitude", (32.0864169).toRawBits())
