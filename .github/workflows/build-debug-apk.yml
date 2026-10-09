@@ -36,10 +36,3 @@ jobs:
 
       - name: Build debug APK
         run: ./gradlew :app:assembleGithubDebug --no-daemon --stacktrace
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: open-headunit-github-debug
-          path: app/build/outputs/apk/github/debug/*.apk
-          if-no-files-found: error

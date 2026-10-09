@@ -55,13 +55,6 @@ jobs:
       - name: Assemble github debug APK
         run: ./gradlew :app:assembleGithubDebug --stacktrace
 
-      - name: Upload debug APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-github-debug-apk
-          path: app/build/outputs/apk/github/debug/*.apk
-          if-no-files-found: warn
 
   unit-test:
     name: Unit tests (github debug)
@@ -95,13 +88,3 @@ jobs:
 
       - name: Run unit tests
         run: ./gradlew :app:testGithubDebugUnitTest --stacktrace
-
-      - name: Upload unit test report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-report
-          path: |
-            app/build/reports/tests/testGithubDebugUnitTest
-            app/build/test-results/testGithubDebugUnitTest
-          if-no-files-found: warn
